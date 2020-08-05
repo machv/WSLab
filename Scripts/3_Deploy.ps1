@@ -647,7 +647,7 @@ If (-not $isAdmin) {
         }
 
         # return info
-        @{
+        [PSCustomObject]@{
             OSDiskPath = $vhdpath
             VM = $VMTemp
         }
@@ -1342,7 +1342,7 @@ If (-not $isAdmin) {
 
     #process $labconfig.VMs and create VMs (skip if machine already exists)
         WriteInfoHighlighted 'Processing $LabConfig.VMs, creating VMs'
-        $provisionedVMsCount = 0
+        $provisionedVMs = @()
         foreach ($VMConfig in $LABConfig.VMs.GetEnumerator()){
             if (!(Get-VM -Name "$($labconfig.prefix)$($VMConfig.vmname)" -ErrorAction SilentlyContinue)){
                 $vmProvisioningStartTime = Get-Date
@@ -1482,7 +1482,7 @@ If (-not $isAdmin) {
                     $vmDeploymentEvents += $vmInfo
                 }
                 
-                $provisionedVMsCount += 1
+                $provisionedVMs += $createdVm.VM
             }
         }
 
@@ -1524,6 +1524,16 @@ If (-not $isAdmin) {
         WriteInfo "`t Enabling VMNics device naming"
         Get-VM -VMName "$($labconfig.Prefix)*" | Where-Object Generation -eq 2 | Set-VMNetworkAdapter -DeviceNaming On
 
+    
+    #Starting VMs
+    if($LabConfig.AutoStartAfterDeploy -eq $true) {
+        WriteInfoHighlighted "Starting provisioned VMs"
+        $provisionedVMs | ForEach-Object { 
+            WriteInfo "`t $($_.Name)"
+            Start-VM -VM $_ 
+        }
+    }
+
     # Telemetry Event
     if((Get-TelemetryLevel) -in $TelemetryEnabledLevels) {
         WriteInfo "`t Sending telemetry info"
@@ -1531,7 +1541,7 @@ If (-not $isAdmin) {
             'script.duration' = [Math]::Round(((Get-Date) - $StartDateTime).TotalSeconds, 2)
             'memory.available' = [Math]::Round($MemoryAvailableMB, 0)
             'lab.vmsCount.active' = ($AllVMs | Measure-Object).Count # how many VMs are running
-            'lab.vmsCount.provisioned' = $provisionedVMsCount # how many VMs were created by this script run
+            'lab.vmsCount.provisioned' = ($provisionedVMs | Measure-Object).Count # how many VMs were created by this script run
         }
         $properties = @{
             'lab.timezone' = $TimeZone
