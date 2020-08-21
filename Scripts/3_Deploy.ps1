@@ -1524,16 +1524,6 @@ If (-not $isAdmin) {
         WriteInfo "`t Enabling VMNics device naming"
         Get-VM -VMName "$($labconfig.Prefix)*" | Where-Object Generation -eq 2 | Set-VMNetworkAdapter -DeviceNaming On
 
-    
-    #Starting VMs
-    if($LabConfig.AutoStartAfterDeploy -eq $true) {
-        WriteInfoHighlighted "Starting provisioned VMs"
-        $provisionedVMs | ForEach-Object { 
-            WriteInfo "`t $($_.Name)"
-            Start-VM -VM $_ 
-        }
-    }
-
     # Telemetry Event
     if((Get-TelemetryLevel) -in $TelemetryEnabledLevels) {
         WriteInfo "`t Sending telemetry info"
@@ -1552,6 +1542,41 @@ If (-not $isAdmin) {
         $vmDeploymentEvents += $telemetryEvent
 
         Send-TelemetryEvents -Events $vmDeploymentEvents | Out-Null
+    }
+
+    $startVMs = 0
+    if($LabConfig.AutoStartAfterDeploy -eq $true) {
+        $startVMs = 1
+    }
+
+    if(-not $LabConfig.ContainsKey("AutoStartAfterDeploy") -and $AllVMs.Count -gt 0) {
+        $options = [System.Management.Automation.Host.ChoiceDescription[]] @(
+            <# 0 #> New-Object System.Management.Automation.Host.ChoiceDescription "&No", "No VM will be started."
+            <# 1 #> New-Object System.Management.Automation.Host.ChoiceDescription "&All", "All VMs in the lab will be started."
+        )
+        
+        if($provisionedVMs.Count -gt 0) {
+            <# 2 #> $options += New-Object System.Management.Automation.Host.ChoiceDescription "&Deployed only", "Only newly deployed VMs will be started."
+        }
+        $startVMs = $host.UI.PromptForChoice("Start VMs", "Would you like to start lab virtual machines?", $options, 1 <#default option#>)
+    }
+    #Starting VMs
+    $toStart = @()
+    switch($startVMs) {
+        1 {
+            $toStart = $AllVMs
+        }
+        2 {
+            $toStart = $provisionedVMs
+        }
+    }
+
+    if(($toStart | Measure-Object).Count -gt 0) {
+        WriteInfoHighlighted "Starting VMs"
+        $toStart | ForEach-Object { 
+            WriteInfo "`t $($_.Name)"
+            Start-VM -VM $_ -WarningAction SilentlyContinue
+        }
     }
 
     #write how much it took to deploy
